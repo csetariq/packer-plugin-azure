@@ -27,24 +27,14 @@ package arm
 //   go test -v -timeout 90m -run TestBuilderAcc_.*
 
 import (
-	"bytes"
-	"context"
 	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
 	"testing"
-	"time"
 
-	"github.com/hashicorp/go-azure-sdk/resource-manager/compute/2022-03-03/galleryimages"
-	"github.com/hashicorp/go-azure-sdk/resource-manager/compute/2022-03-03/galleryimageversions"
-	commonclient "github.com/hashicorp/packer-plugin-azure/builder/azure/common/client"
 	"github.com/hashicorp/packer-plugin-sdk/acctest"
-	packersdk "github.com/hashicorp/packer-plugin-sdk/packer"
-	"github.com/hashicorp/packer-plugin-sdk/retry"
 )
-
-const DeviceLoginAcceptanceTest = "DEVICELOGIN_TEST"
 
 // This test builds two images,
 // First a parent Specialized ARM 64 Linux VM to a Shared Image Gallery/Compute Gallery
@@ -67,40 +57,11 @@ func TestBuilderAcc_SharedImageGallery_ARM64SpecializedLinuxSIG_WithChildImage(t
 		return
 	}
 
-	subscriptionID := os.Getenv("ARM_SUBSCRIPTION_ID")
-
-	createSharedImageGalleryDefinition(t, CreateSharedImageGalleryDefinitionParameters{
-		galleryImageName: "arm-linux-specialized-sig",
-		imageSku:         "22_04-lts-arm64",
-		subscriptionId:   subscriptionID,
-		imageOffer:       "0001-com-ubuntu-server-jammy",
-		imagePublisher:   "canonical",
-		isX64:            false,
-		isWindows:        false,
-		useGenTwoVM:      true,
-		specialized:      true,
-	})
-
-	defer deleteSharedImageGalleryDefinition(t, subscriptionID, "arm-linux-specialized-sig", []string{"1.0.0", "1.0.1"})
 	// Create parent specialized shared gallery image
 	acctest.TestPlugin(t, &acctest.PluginTestCase{
 		Name:     "test-specialized-linux-sig",
 		Type:     "azure-arm",
 		Template: string(armLinuxSpecialziedSIGTemplate),
-		Setup: func() error {
-			createSharedImageGalleryDefinition(t, CreateSharedImageGalleryDefinitionParameters{
-				galleryImageName: "arm-linux-specialized-sig",
-				subscriptionId:   os.Getenv("ARM_SUBSCRIPTION_ID"),
-				imageSku:         "22_04-lts-arm64",
-				imageOffer:       "0001-com-ubuntu-server-jammy",
-				imagePublisher:   "canonical",
-				isX64:            false,
-				isWindows:        false,
-				useGenTwoVM:      true,
-				specialized:      true,
-			})
-			return nil
-		},
 		Check: func(buildCommand *exec.Cmd, logfile string) error {
 			if buildCommand.ProcessState != nil {
 				if buildCommand.ProcessState.ExitCode() != 0 {
@@ -138,18 +99,6 @@ func TestBuilderAcc_SharedImageGallery_WindowsSIG(t *testing.T) {
 		t.Fatalf("Azure CLI Acceptance tests require 'AZURE_CLI_AUTH' is set, and an active `az login` session has been established")
 		return
 	}
-
-	subscriptionID := os.Getenv("ARM_SUBSCRIPTION_ID")
-	createSharedImageGalleryDefinition(t, CreateSharedImageGalleryDefinitionParameters{
-		galleryImageName: "windows-sig",
-		imageSku:         "2012-R2-Datacenter",
-		imageOffer:       "WindowsServer",
-		imagePublisher:   "MicrosoftWindowsServer",
-		isX64:            true,
-		subscriptionId:   subscriptionID,
-		isWindows:        true,
-	})
-	defer deleteSharedImageGalleryDefinition(t, subscriptionID, "windows-sig", []string{"1.0.0"})
 
 	acctest.TestPlugin(t, &acctest.PluginTestCase{
 		Name:     "test-windows-sig",
@@ -359,123 +308,6 @@ func TestBuilderAcc_rsaSHA2OnlyServer(t *testing.T) {
 			return nil
 		},
 	})
-}
-
-type CreateSharedImageGalleryDefinitionParameters struct {
-	galleryImageName string
-	subscriptionId   string
-	imageSku         string
-	imageOffer       string
-	imagePublisher   string
-	isX64            bool
-	isWindows        bool
-	useGenTwoVM      bool
-	specialized      bool
-}
-
-func createTestAzureClient(t *testing.T) AzureClient {
-	b := Builder{}
-	_, _, _ = b.Prepare()
-	ui := testUi()
-	// Use CLI auth for our test client
-	b.config.ClientConfig.UseAzureCLIAuth = true
-	_ = b.config.ClientConfig.FillParameters()
-	authOptions := commonclient.AzureAuthOptions{
-		AuthType:       b.config.ClientConfig.AuthType(),
-		ClientID:       b.config.ClientConfig.ClientID,
-		ClientSecret:   b.config.ClientConfig.ClientSecret,
-		TenantID:       b.config.ClientConfig.TenantID,
-		SubscriptionID: b.config.ClientConfig.SubscriptionID,
-	}
-	ui.Message("Creating test Azure Resource Manager (ARM) client ...")
-	azureClient, err := NewAzureClient(
-		context.TODO(),
-		true,
-		b.config.ClientConfig.CloudEnvironment(),
-		b.config.SharedGalleryTimeout,
-		b.config.PollingDurationTimeout,
-		authOptions)
-	if err != nil {
-		t.Fatalf("failed to create test azure client: %s", err)
-	}
-	return *azureClient
-}
-
-func createSharedImageGalleryDefinition(t *testing.T, params CreateSharedImageGalleryDefinitionParameters) {
-	azureClient := createTestAzureClient(t)
-	osType := galleryimages.OperatingSystemTypesLinux
-	if params.isWindows {
-		osType = galleryimages.OperatingSystemTypesWindows
-	}
-	osState := galleryimages.OperatingSystemStateTypesGeneralized
-	if params.specialized {
-		osState = galleryimages.OperatingSystemStateTypesSpecialized
-	}
-	osArch := galleryimages.ArchitectureArmSixFour
-	if params.isX64 {
-		osArch = galleryimages.ArchitectureXSixFour
-	}
-	hyperVGeneration := galleryimages.HyperVGenerationVOne
-	if params.useGenTwoVM {
-		hyperVGeneration = galleryimages.HyperVGenerationVTwo
-	}
-	location := "southcentralus"
-	galleryId := galleryimages.NewGalleryImageID(params.subscriptionId, "packer-acceptance-test", "acctestgallery", params.galleryImageName)
-	_, err := azureClient.GalleryImagesClient.CreateOrUpdate(context.TODO(), galleryId, galleryimages.GalleryImage{
-		Properties: &galleryimages.GalleryImageProperties{
-			OsType:           osType,
-			OsState:          osState,
-			Architecture:     &osArch,
-			HyperVGeneration: &hyperVGeneration,
-			Identifier: galleryimages.GalleryImageIdentifier{
-				Publisher: params.imagePublisher,
-				Offer:     params.imageOffer,
-				Sku:       params.imageSku,
-			},
-		},
-		Location: location,
-	})
-
-	if err != nil {
-		t.Fatalf("failed to create Gallery %s: %s", params.galleryImageName, err)
-	}
-}
-
-func deleteSharedImageGalleryDefinition(t *testing.T, subscriptionID string, galleryImageName string, imageVersions []string) {
-	azureClient := createTestAzureClient(t)
-	for _, imageVersion := range imageVersions {
-		// If we fail to delete a gallery version we should still try to delete other versions and the gallery
-		// Its possible a build was canceled or failed mid test that would leave any of the builds incomplete
-		// We still want to try and delete the Gallery to not leave behind orphaned resources to manually clean up
-		id := galleryimageversions.NewImageVersionID(subscriptionID, "packer-acceptance-test", "acctestgallery", galleryImageName, imageVersion)
-		err := azureClient.GalleryImageVersionsClient.DeleteThenPoll(context.TODO(), id)
-		if err != nil {
-			t.Logf("failed to delete Gallery Image Version %s:%s %s", galleryImageName, imageVersion, err)
-		}
-	}
-	retryConfig := retry.Config{
-		Tries:      5,
-		RetryDelay: (&retry.Backoff{InitialBackoff: 2 * time.Second, MaxBackoff: 30 * time.Second, Multiplier: 2}).Linear,
-	}
-	err := retryConfig.Run(context.TODO(), func(ctx context.Context) error {
-		id := galleryimages.NewGalleryImageID(subscriptionID, "packer-acceptance-test", "acctestgallery", galleryImageName)
-		err := azureClient.GalleryImagesClient.DeleteThenPoll(context.TODO(), id)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("failed to delete Gallery %s: %s", galleryImageName, err)
-	}
-}
-
-func testUi() *packersdk.BasicUi {
-	return &packersdk.BasicUi{
-		Reader:      new(bytes.Buffer),
-		Writer:      new(bytes.Buffer),
-		ErrorWriter: new(bytes.Buffer),
-	}
 }
 
 func testBuilderUserDataLinux(userdata string) string {
