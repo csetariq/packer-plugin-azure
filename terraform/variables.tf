@@ -12,3 +12,8 @@ variable "storage_account_name" {
   type    = string
   default = "apackeracceptancet3210"
 }
+
+variable "dtl_name" {
+  type = string
+  default = "packer-acceptance-test"
+}

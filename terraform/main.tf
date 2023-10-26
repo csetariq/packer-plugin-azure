@@ -3,6 +3,7 @@ resource "azurerm_resource_group" "rg" {
   name     = var.resource_group_name
 }
 
+## ARM Builder Resources
 resource "azurerm_storage_account" "storage-account" {
   name                     = var.storage_account_name
   resource_group_name      = azurerm_resource_group.rg.name
@@ -45,5 +46,22 @@ resource "azurerm_shared_image" "linux-sig" {
     publisher = "canonical"
     offer     = "0001-com-ubuntu-server-jammy"
     sku       = "22_04-lts-arm64"
+  }
+}
+
+## DTL Builder Resources
+
+resource "azurerm_dev_test_lab" "dtl" {
+  name                = var.dtl_name
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+}
+
+resource "azurerm_dev_test_virtual_network" "vnet" {
+  name                = "vnet"
+  lab_name            = azurerm_dev_test_lab.dtl.name
+  resource_group_name = azurerm_resource_group.rg.name
+  subnet {
+    use_in_virtual_machine_creation = "Allow"
   }
 }
