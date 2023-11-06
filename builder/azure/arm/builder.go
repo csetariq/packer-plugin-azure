@@ -23,7 +23,6 @@ import (
 	packerAzureCommon "github.com/hashicorp/packer-plugin-azure/builder/azure/common"
 	commonclient "github.com/hashicorp/packer-plugin-azure/builder/azure/common/client"
 	"github.com/hashicorp/packer-plugin-azure/builder/azure/common/constants"
-	"github.com/hashicorp/packer-plugin-azure/builder/azure/common/lin"
 	"github.com/hashicorp/packer-plugin-sdk/communicator"
 	"github.com/hashicorp/packer-plugin-sdk/multistep"
 	"github.com/hashicorp/packer-plugin-sdk/multistep/commonsteps"
@@ -271,7 +270,7 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 			NewStepGetIPAddress(azureClient, ui, endpointConnectType),
 			&communicator.StepConnectSSH{
 				Config:    &b.config.Comm,
-				Host:      lin.SSHHost,
+				Host:      communicator.CommHost(b.config.Comm.SSHHost, constants.SSHHost),
 				SSHConfig: b.config.Comm.SSHConfigFunc(),
 			},
 			&commonsteps.StepProvision{},
@@ -325,7 +324,7 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 			steps = append(steps,
 				&communicator.StepConnectSSH{
 					Config:    &b.config.Comm,
-					Host:      lin.SSHHost,
+					Host:      communicator.CommHost(b.config.Comm.SSHHost, constants.SSHHost),
 					SSHConfig: b.config.Comm.SSHConfigFunc(),
 				},
 			)
