@@ -271,7 +271,7 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 			NewStepGetIPAddress(azureClient, ui, endpointConnectType),
 			&communicator.StepConnectSSH{
 				Config:    &b.config.Comm,
-				Host:      lin.SSHHost,
+				Host:      communicator.CommHost(b.config.Comm.SSHHost, constants.SSHHost),
 				SSHConfig: b.config.Comm.SSHConfigFunc(),
 			},
 			&commonsteps.StepProvision{},
